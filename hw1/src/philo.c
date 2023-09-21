@@ -1,7 +1,47 @@
+#include <stdio.h>
 #include <stdlib.h>
 
 #include "global.h"
 #include "debug.h"
+
+#define MAX_TAXA 100
+#define MAX_NEWICK_SIZE 4096
+
+char taxa_names[MAX_TAXA][MAX_TAXA];
+int distance_matrix[MAX_TAXA][MAX_TAXA];
+int flags = 0; // Placeholder for flags
+int num_all_nodes = MAX_TAXA;
+char* outlier_name = NULL; // Placeholder for outlier name. This would be set based on user input
+
+int compare(const char *str1, const char *str2);
+
+int parse_integer(const char *str, int *value) {
+    int i = 0;
+    *value = 0;
+    while (str[i] >= '0' && str[i] <= '9') {
+        *value = (*value * 10) + (str[i] - '0');
+        i++;
+    }
+    return i;
+}
+
+void append_to_newick(char* dest, const char* src) {
+    while (*dest) {
+        dest++
+    }
+    while (*src) {
+        *dest = *src;
+        dest++;
+        src++;
+    }
+    *dest = '\0';
+}
+
+char* generate_newick_recursive(int node) {
+    // Placeholder function for recursive Newick generation
+
+    return NULL;
+}
 
 /**
  * @brief  Read genetic distance data and initialize data structures.
@@ -53,8 +93,41 @@
  */
 
 int read_distance_data(FILE *in) {
-    // TO BE IMPLEMENTED
-    abort();
+    char line[1024];
+    int row = 0;
+
+    // Read the first line for taxa names
+    if (fgets(line, sizeof(line), in) != NULL) {
+        int i = 0, j = 0, k = 0;
+        while (line[i] != '\0') {
+            if (line[i] == ',' || line[i] == '\n') {
+                taxa_names[j][k] = '\0';
+                j++;
+                k = 0;
+                i++;
+            } else {
+                taxa_names[j][k++] = line[i++];
+            }
+        }
+    }
+
+    // Read the distance matrix
+    while (fgets(line, sizeof(line), in) != NULL) {
+        int i = 0, col = 0, value;
+        while (line[i] != '\0') {
+            if (line[i] == ',' || line[i] == '\n') {
+                i++;
+            } else {
+                i += parse_integer(&line[i], &value);
+                distance_matrix[row][col++] = value;
+            }
+        }
+        row++;
+    }
+
+    // TODO: Add error handling and validation
+
+    return 0;
 }
 
 /**
@@ -90,8 +163,36 @@ int read_distance_data(FILE *in) {
  * in the tree.
  */
 int emit_newick_format(FILE *out) {
-    // TO BE IMPLEMENTED
-    abort();
+    int outlier_node = -1;
+    char newick_str[MAX_NEWICK_SIZE] = {0}; // Static buffer for Newick string
+    if (outlier_name) {
+        // Find the node with the outlier_name
+        for (int i = 0; i < num_all_nodes; i++) {
+            if (compare(taxa_names[i], outlier_name) == 0) {
+                outlier_node = i;
+                break;
+            }
+        }
+        if (outlier_node == -1) return -1; // Error if no node with outlier_name exists
+    } else {
+        // Determine the outlier node based on the greatest total distance to other leaves
+        int max_distance = -1;
+        for (int i = 0; i < num_all_nodes; i++) {
+            int current_distance = 0;
+            for (int j = 0; j < num_all_nodes; j++) {
+                current_distance += distance_matrix[i][j];
+            }
+            if (current_distance > max_distance) {
+                max_distance = current_distance;
+                outlier_node = i;
+            }
+        }
+    }
+
+    if (newick_str[0] != '\0') {
+        fprintf(out, "%s;\n", newick_str);
+    }
+    return 0;
 }
 
 /**
@@ -112,8 +213,15 @@ int emit_newick_format(FILE *out) {
  * if any error occurred.
  */
 int emit_distance_matrix(FILE *out) {
-    // TO BE IMPLEMENTED
-    abort();
+    for (int i = 0; i < num_all_nodes; i++) {
+        for (int j = 0; j < num_all_nodes; j++) {
+            fprintf(out, "%d", distance_matrix[i][j]);
+            if (j < num_all_nodes - 1) {
+                fprintf(out, ",");  // Add comma for CSV format except for the last column
+            }
+        }
+    }
+    return 0;
 }
 
 /**
@@ -162,6 +270,76 @@ int emit_distance_matrix(FILE *out) {
  * if any error occurred.
  */
 int build_taxonomy(FILE *out) {
-    // TO BE IMPLEMENTED
-    abort();
+    // Initialization
+    int total_distances[MAX_TAXA] = {0};
+    for (int i = 0; i < MAX_TAXA; i++) {
+        for (int j = 0; j < MAX_TAXA; j++) {
+            total_distances[i] += distance_matrix[i][j];
+        }
+    }
+
+    // Main loop for the neighbor joining algorithm
+    int N = MAX_TAXA; // Number of remaining taxa
+    while (N > 2) {
+        // Find the pair of taxa to join
+        int min_i = -1, min_j = -1;
+        double min_distance = 1.0e30; // A large initial value
+        for (int i = 0; i < N; i++) {
+            for (int j = i + 1; j < N; j++) {
+                double reduced_distance = distance_matrix[i][j] - (double)(total_distances[i] + total_distances[j]) / (N - 2);
+                if (reduced_distance < min_distance) {
+                    min_distance = reduced_distance;
+                    min_i = i;
+                    min_j = j;
+                }
+            }
+        }
+        // Calculate the branch lengths and update the distance matrix
+        double branch_length_i = (distance_matrix[min_i][min_j] + (double)(total_distances[min_i] - total_distances[min_j]) / (N - 2)) / 2;
+        double branch_length_j = distance_matrix[min_i][min_j] - branch_length_i;
+
+        // Update the distance matrix
+        for (int k = 0; k < N; k++) {
+            if (k != min_i && k != min_j) {
+                double new_distance = (distance_matrix[min_i][k] + distance_matrix[min_j][k] - distance_matrix[min_i][min_j]) / 2;
+                distance_matrix[min_i][k] = new_distance;
+                distance_matrix[k][min_i] = new_distance;
+            }
+        }
+        // Remove min_j from the matrix by shifting rows and columns
+        for (int k = min_j; k < N - 1; k++) {
+            total_distances[k] = total_distances[k + 1];
+            for (int l = 0; l < N; l++) {
+                distance_matrix[k][l] = distance_matrix[k + 1][l];
+                distance_matrix[l][k] = distance_matrix[l][k + 1];
+            }
+        }
+        N--;
+    }
+
+    // Output the resulting tree or matrix based on flags
+    if (flags & 0x1) { // 0x1 represents the -m flag
+        //Output the matrix of estimated distances
+        for (int i = 0; i < N; i++) {
+            for (int j = 0; j < N; j++) {
+                fprintf(out, "%d", distance_matrix[i][j]);
+            }
+            fprintf(out, "\n");
+        }
+    } else {
+        // Output the edges (default behavior)
+        for (int i = 0; i < N; i++) {
+            for (int j = i + 1; j < N; j++) {
+                fprintf(out, "%s  %s %d\n", taxa_names[i], taxa_names[j], distance_matrix[i][j]);
+            }
+        }
+    }
+
+    // for (int i = 0; i < N; i++) {
+    //     for (int j = i + 1; j < N; j++) {
+    //         fprintf(out, "%s %s %d\n", taxa_names[i], taxa_names[j], distance_matrix[i][j]);
+    //     }
+    // }
+
+    return 0;
 }
