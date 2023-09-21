@@ -25,23 +25,81 @@ int parse_integer(const char *str, int *value) {
     return i;
 }
 
-void append_to_newick(char* dest, const char* src) {
-    while (*dest) {
-        dest++
+// void append_to_newick(char* dest, const char* src) {
+//     while (*dest) {
+//         dest++
+//     }
+//     while (*src) {
+//         *dest = *src;
+//         dest++;
+//         src++;
+//     }
+//     *dest = '\0';
+// }
+
+// char* generate_newick_recursive(int node, char* buffer) {
+//     // If the node is a leaf, append its name to the buffer
+//     if (node < num_taxa) {
+//         append_to_newick(buffer, taxa_names[node]);
+//         return;
+//     }
+
+//     // Otherwise, it's an internal node. Recursively generate the Newick format for its children.
+//     char left_newick[MAX_NEWICK_SIZE] = {0};
+//     char right_newick[MAX_NEWICK_SIZE] = {0};
+//     generate_newick_recursive(nodes[node].neighbors[0]->index, left_newick);
+//     generate_newick_recursive(nodes[node].neighbors[1]->index, right_newick);
+
+//     // Calculate the distances to the children
+//     double left_distance = distances[node][nodes[node].neighbors[0]->index];
+//     double right_distance = distances[node][nodes[node].neighbors[1]->index];
+
+//     // Append the combined Newick formats of the children to the buffer
+//     append_to_newick(buffer, "(");
+//     append_to_newick(buffer, left_newick);
+//     char left_dist_str[20]; // Assuming distance won't exceed this length
+//     sprintf(left_dist_str, ":%.2f", left_distance);
+//     append_to_newick(buffer, left_dist_str);
+//     append_to_newick(buffer, ", ");
+//     append_to_newick(buffer, right_newick);
+//     char right_dist_str[20];
+//     sprintf(right_dist_str, ":%.2f", right_distance);
+//     append_to_newick(buffer, right_dist_str);
+//     append_to_newick(buffer, ")");
+// }
+
+void generate_newick_recursive(NODE *node, char *buffer, int *pos) {
+    if (node == NULL) return;
+
+    // If it's a leaf node
+    if (node->neighbors[1] == NULL && node->neighbors[2] == NULL) {
+        // Append the name of the leaf node to the buffer
+        int i = 0;
+        while (node->name[i] != '\0') {
+            buffer[*pos] = node->name[i];
+            (*pos)++;
+            i++;
+        }
+        return;
     }
-    while (*src) {
-        *dest = *src;
-        dest++;
-        src++;
-    }
-    *dest = '\0';
+
+    // If it's an internal node
+    buffer[*pos] = '(';
+    (*pos)++;
+
+    // Recur for the first child
+    generate_newick_recursive(node->neighbors[1], buffer, pos);
+
+    buffer[*pos] = ',';
+    (*pos)++;
+
+    // Recur for the second child
+    generate_newick_recursive(node->neighbors[2], buffer, pos);
+
+    buffer[*pos] = ')';
+    (*pos)++;
 }
 
-char* generate_newick_recursive(int node) {
-    // Placeholder function for recursive Newick generation
-
-    return NULL;
-}
 
 /**
  * @brief  Read genetic distance data and initialize data structures.
@@ -163,37 +221,54 @@ int read_distance_data(FILE *in) {
  * in the tree.
  */
 int emit_newick_format(FILE *out) {
-    int outlier_node = -1;
     char newick_str[MAX_NEWICK_SIZE] = {0}; // Static buffer for Newick string
-    if (outlier_name) {
-        // Find the node with the outlier_name
-        for (int i = 0; i < num_all_nodes; i++) {
-            if (compare(taxa_names[i], outlier_name) == 0) {
-                outlier_node = i;
-                break;
-            }
-        }
-        if (outlier_node == -1) return -1; // Error if no node with outlier_name exists
-    } else {
-        // Determine the outlier node based on the greatest total distance to other leaves
-        int max_distance = -1;
-        for (int i = 0; i < num_all_nodes; i++) {
-            int current_distance = 0;
-            for (int j = 0; j < num_all_nodes; j++) {
-                current_distance += distance_matrix[i][j];
-            }
-            if (current_distance > max_distance) {
-                max_distance = current_distance;
-                outlier_node = i;
-            }
-        }
-    }
+    int pos = 0;
 
-    if (newick_str[0] != '\0') {
-        fprintf(out, "%s;\n", newick_str);
-    }
+    // Find the root node (it could be any node based on your logic)
+    NODE *root = &nodes[0]; // Assuming nodes[0] is the root
+
+    generate_newick_recursive(root, newick_str, &pos);
+
+    newick_str[pos] = ';';
+    newick_str[pos + 1] = '\0';
+
+    fprintf(out, "%s\n", newick_str);
+
     return 0;
 }
+
+// int emit_newick_format(FILE *out) {
+//     int outlier_node = -1;
+//     char newick_str[MAX_NEWICK_SIZE] = {0}; // Static buffer for Newick string
+//     if (outlier_name) {
+//         // Find the node with the outlier_name
+//         for (int i = 0; i < num_all_nodes; i++) {
+//             if (compare(taxa_names[i], outlier_name) == 0) {
+//                 outlier_node = i;
+//                 break;
+//             }
+//         }
+//         if (outlier_node == -1) return -1; // Error if no node with outlier_name exists
+//     } else {
+//         // Determine the outlier node based on the greatest total distance to other leaves
+//         int max_distance = -1;
+//         for (int i = 0; i < num_all_nodes; i++) {
+//             int current_distance = 0;
+//             for (int j = 0; j < num_all_nodes; j++) {
+//                 current_distance += distance_matrix[i][j];
+//             }
+//             if (current_distance > max_distance) {
+//                 max_distance = current_distance;
+//                 outlier_node = i;
+//             }
+//         }
+//     }
+
+//     if (newick_str[0] != '\0') {
+//         fprintf(out, "%s;\n", newick_str);
+//     }
+//     return 0;
+// }
 
 /**
  * @brief  Emit the synthesized distance matrix as CSV.

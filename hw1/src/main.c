@@ -4,13 +4,13 @@
 #include "global.h"
 #include "debug.h"
 
-#define MAX_NODES 100 // Maximum number of nodes
-
 double matrix[MAX_NODES][MAX_NODES]; //Pre-declared 2D array to store the matrix
 
 int readAndValidateMatrix() {
     int numNodes = 0; // To keep track of the number of nodes read.
     char line[1024]; // Buffer to read each line
+
+    return 0;
 }
 
 int main(int argc, char **argv)
